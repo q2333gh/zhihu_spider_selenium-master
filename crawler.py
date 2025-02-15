@@ -593,204 +593,178 @@ def recursion(nod, article, number, driver, dircrea, bk=False):
     return article, number
 
 
-def crawl_article_detail(driver: webdriver):
+def crawl_detail(driver, content_type="article"):
+    """统一处理文章和回答的爬取逻辑"""
+    base_dir = articledir if content_type == "article" else answerdir
+    file_name = "article.txt" if content_type == "article" else "answers.txt"
+    content_class = (
+        "Post-RichText" if content_type == "article" else "RichContent-inner"
+    )
+
     website_col = {}
-    for i in os.listdir(articledir):
+
+    # 清理旧的数字命名目录
+    for i in os.listdir(base_dir):
         try:
             kk = int(i)
-            shutil.rmtree(os.path.join(articledir, i))
+            shutil.rmtree(os.path.join(base_dir, i))
         except:
             pass
-    with open(os.path.join(articledir, "article.txt"), "r", encoding="utf-8") as obj:
-        for i in obj.readlines():
-            i = i.strip()
-            while len(i) > 0 and i[0] == " ":
-                i = i[1:]
-            if i == "":
+
+    # 读取待爬取的链接
+    with open(os.path.join(base_dir, file_name), "r", encoding="utf-8") as obj:
+        for line in obj.readlines():
+            line = line.strip()
+            if not line:
                 continue
-            ind = i.index(" ")
-            website = i[:ind]
-            title = i[ind + 1 :].replace("\n", "")
-            while len(title) > 0 and title[0] == " ":
-                title = title[1:]
-            while len(title) > 0 and title[-1] == " ":
-                title = title[:-1]
-            if title == "":
-                continue
-            website_col[website] = title
+            ind = line.index(" ")
+            website = line[:ind]
+            title = line[ind + 1 :].strip()
+            if title:
+                website_col[website] = title
+
     allbegin = now()
     numberpage = 1e-6
+
     for website, title in website_col.items():
         begin = now()
-        nam = (
-            title.replace(":", "_")
-            .replace("?", "_问号_")
-            .replace("/", "_")
-            .replace("\\", "_")
-            .replace('"', "_")
-            .replace("*", "_")
-            .replace("|", "_")
-            .replace("？", "_问号_")
-            .replace("！", "_感叹号_")
-            .replace("<", "小于")
-            .replace(">", "大于")
-            .replace("(", "")
-            .replace(")", "")
-            .replace(",", "_逗号_")
-            .replace("，", "_逗号_")
-            .replace("   ", "_空格_")
-            .replace("  ", "_空格_")
-            .replace(" ", "_空格_")
-            .replace("：", "_冒号_")
-            .replace("、", "_顿号_")
-        )
-        temp_name = (
-            nam  # str(np.random.randint(999999999)) + str(np.random.randint(999999999))
-        )
-        if len(temp_name) > 100:
-            temp_name = temp_name[:100]
-        while temp_name != "" and temp_name[-1] == " ":
-            temp_name = temp_name[:-1]
-        while temp_name != "" and temp_name[0] == " ":
-            temp_name = temp_name[1:]
-        direxit = False
-        fileexit = False
-        dirname = ""
-        filesize = 0
-        kkk = -9
-        for i in os.listdir(articledir):
-            if nam in i and os.path.isdir(os.path.join(articledir, i)):
-                direxit = True
-                dircol = os.path.join(articledir, i)
-                for j in os.listdir(dircol):
-                    if ".pdf" in j:
-                        if os.path.getsize(os.path.join(dircol, j)) > 0:
-                            kkk = 9
-                            break
-                if kkk > 0:
-                    break
-        if kkk > 0:
-            print(f"{os.path.join(dircol, j)}已经爬取过了，不再重复爬取")
+
+        # 处理文件名
+        nam = sanitize_filename(title)
+        temp_name = nam
+
+        # 检查是否已经爬取过
+        exists, existing_file = check_existing_content(base_dir, nam)
+        if exists:
+            print(f"{existing_file}已经爬取过了，不再重复爬取")
             continue
-        dircrea = os.path.join(articledir, temp_name)
+
+        # 创建保存目录
+        dircrea = os.path.join(base_dir, temp_name)
         os.makedirs(dircrea, exist_ok=True)
 
-        # get article text
+        # 获取页面内容
         driver.get(website)
-        WebDriverWait(driver, timeout=20).until(
-            lambda d: d.find_element(By.CLASS_NAME, "Post-Topics")
-        )
+        if content_type == "article":
+            WebDriverWait(driver, timeout=20).until(
+                lambda d: d.find_element(By.CLASS_NAME, "Post-Topics")
+            )
+        else:
+            WebDriverWait(driver, timeout=20).until(
+                lambda d: d.find_element(By.CLASS_NAME, "QuestionHeader-title")
+            )
 
-        # https://stackoverflow.com/questions/61877719/how-to-get-current-scroll-height-in-selenium-python
-        scrollHeight = driver.execute_script(
-            """return document.documentElement.scrollHeight"""
+        # 滚动页面加载所有内容
+        scroll_page(driver)
+
+        # 移除不需要的元素
+        unwanted_elements = (
+            ["Post-Sub", "ColumnPageHeader-Wrapper", "RichContent-actions"]
+            if content_type == "article"
+            else [
+                "Post-Sub",
+                "ColumnPageHeader-Wrapper",
+                "RichContent-actions",
+                "QuestionHeader-footer",
+            ]
         )
-        footer = driver.find_element(By.TAG_NAME, "html")
-        scroll_origin = ScrollOrigin.from_element(footer, 0, -60)
-        ActionChains(driver).scroll_from_origin(scroll_origin, 0, -100000).perform()
-        for i in range(18):
-            try:
-                ActionChains(driver).scroll_from_origin(
-                    scroll_origin, 0, scrollHeight // 18
-                ).perform()
-            except:
-                try:
-                    ActionChains(driver).scroll_from_origin(
-                        scroll_origin, 0, -scrollHeight // 18
-                    ).perform()
-                except:
-                    pass
-            crawlsleep(0.8)
-        try:
-            driver.execute_script(
-                """document.getElementsByClassName("Post-Sub")[0].remove();"""
-            )
-        except:
-            pass
-        try:
-            driver.execute_script(
-                """document.getElementsByClassName("ColumnPageHeader-Wrapper")[0].remove();"""
-            )
-        except:
-            pass
-        try:
-            driver.execute_script(
-                """document.getElementsByClassName("RichContent-actions")[0].remove();"""
-            )
-        except:
-            pass
+        remove_unwanted_elements(driver, unwanted_elements)
 
         if MarkDown_FORMAT:
-            richtext = driver.find_element(By.CLASS_NAME, "Post-RichText")
-            titletext = driver.find_element(By.CLASS_NAME, "Post-Title")
-            article = ""
-            number = 0
-
-            inner = driver.execute_script("return arguments[0].innerHTML;", richtext)
-            innerHTML = BeautifulSoup(inner, "html.parser")
-            article, number = parser_beautiful(innerHTML, article, number, dircrea)
-
-            article = (
-                article.replace("修改\n", "")
-                .replace("开启赞赏\n", "开启赞赏, ")
-                .replace("添加评论\n", "")
-                .replace("分享\n", "")
-                .replace("收藏\n", "")
-                .replace("设置\n", "")
+            # 处理正文内容
+            content_element = driver.find_element(By.CLASS_NAME, content_class)
+            title_element = driver.find_element(
+                By.CLASS_NAME,
+                "Post-Title" if content_type == "article" else "QuestionHeader-title",
             )
-            tle = titletext.text
-            article += (
-                "<br>\n\n[" + driver.current_url + "](" + driver.current_url + ")<br>\n"
+
+            article, number = process_content(
+                driver,
+                content_element,
+                dircrea,
+                is_question=(content_type != "article"),
             )
-            if len(article) > 0:
+
+            # 添加URL信息
+            article += f"<br>\n\n[{driver.current_url}]({driver.current_url})<br>\n"
+
+            # 获取时间信息
+            if content_type == "article":
+                clocktxt = driver.find_element(
+                    By.CLASS_NAME, "Post-NormalMain"
+                ).find_element(By.CLASS_NAME, "ContentItem-time")
+                Created = clocktxt.text[3 + 1 :].replace(":", "_")
+                Modified = ""
+            else:
                 try:
-                    f = open(
-                        os.path.join(dircrea, nam[:3] + "_.md"), "w", encoding="utf-8"
-                    )
-                    f.close()
+                    Created = driver.find_element(
+                        By.CSS_SELECTOR, "div.ContentItem-time"
+                    ).text.split("发布于 ")[1]
+                    Modified = driver.find_element(
+                        By.CSS_SELECTOR, "div.ContentItem-time>span.ContentItem-time"
+                    ).text.split("编辑于 ")[1]
                 except:
-                    nam = nam[: len(nam) // 2]
-                with open(
-                    os.path.join(dircrea, nam[:3] + "_.md"), "w", encoding="utf-8"
-                ) as obj:
-                    obj.write("# " + tle + "\n\n")
-                    if len(article) > 0:
-                        obj.write(article + "\n\n\n")
-                    obj.write("\n\n\n")
+                    Created = ""
+                    Modified = ""
 
-        clocktxt = driver.find_element(By.CLASS_NAME, "Post-NormalMain").find_element(
-            By.CLASS_NAME, "ContentItem-time"
-        )
-        crawlsleep(1)
+            # 保存Markdown内容
+            md_file_path = os.path.join(dircrea, nam[:3] + "_.md")
+            save_markdown_content(
+                article, title_element.text, md_file_path, Created, Modified
+            )
+
+        # 保存PDF
         url = driver.current_url
-        driver.execute_script(
-            'const para = document.createElement("h2"); \
-                                const br = document.createElement("br"); \
-                                const node = document.createTextNode("%s");\
-                                para.appendChild(node);\
-                                const currentDiv = document.getElementsByClassName("Post-Header")[0];\
-                                currentDiv.appendChild(br); \
-                                currentDiv.appendChild(para);'
-            % url
+        if content_type == "article":
+            driver.execute_script(
+                'const para = document.createElement("h2"); \
+                const br = document.createElement("br"); \
+                const node = document.createTextNode("%s");\
+                para.appendChild(node);\
+                const currentDiv = document.getElementsByClassName("Post-Header")[0];\
+                currentDiv.appendChild(br); \
+                currentDiv.appendChild(para);'
+                % url
+            )
+
+        pagetopdf(
+            driver,
+            dircrea,
+            temp_name,
+            nam,
+            base_dir,
+            url,
+            Created=Created if content_type == "article" else "",
         )
-        clock = clocktxt.text[3 + 1 :].replace(":", "_")
-        pagetopdf(driver, dircrea, temp_name, nam, articledir, url, Created=clock)
 
         crawlsleep(sleeptime)
 
         end = now()
-        print("爬取一篇article耗时：", title, round(end - begin, 3))
+        content_type_cn = "文章" if content_type == "article" else "回答"
+        print(f"爬取一篇{content_type_cn}耗时：{title} {round(end - begin, 3)}")
         logfp.write(
-            "爬取一篇article耗时：" + title + " " + str(round(end - begin, 3)) + "\n"
+            f"爬取一篇{content_type_cn}耗时：{title} {str(round(end - begin, 3))}\n"
         )
         numberpage += 1
+
     allend = now()
-    print("平均爬取一篇article耗时：", round((allend - allbegin) / numberpage, 3))
-    logfp.write(
-        "平均爬取一篇article耗时："
-        + str(round((allend - allbegin) / numberpage, 3))
-        + "\n"
+    content_type_cn = "文章" if content_type == "article" else "回答"
+    print(
+        f"平均爬取一篇{content_type_cn}耗时：{round((allend - allbegin) / numberpage, 3)}"
     )
+    logfp.write(
+        f"平均爬取一篇{content_type_cn}耗时：{str(round((allend - allbegin) / numberpage, 3))}\n"
+    )
+
+
+def crawl_article_detail(driver):
+    """爬取文章详情"""
+    crawl_detail(driver, content_type="article")
+
+
+def crawl_answer_detail(driver):
+    """爬取回答详情"""
+    crawl_detail(driver, content_type="answer")
 
 
 def pagetopdf(driver, dircrea, temp_name, nam, destdir, url, Created=""):
@@ -836,279 +810,6 @@ def pagetopdf(driver, dircrea, temp_name, nam, destdir, url, Created=""):
             os.rename(dircrea, os.path.join(destdir, clock + "_" + nam + "_" + address))
         except Exception as e1:
             pass
-
-
-def crawl_answer_detail(driver: webdriver):
-    website_col = {}
-    for i in os.listdir(answerdir):
-        try:
-            kk = int(i)
-            shutil.rmtree(os.path.join(answerdir, i))
-        except:
-            pass
-    with open(os.path.join(answerdir, "answers.txt"), "r", encoding="utf-8") as obj:
-        for i in obj.readlines():
-            i = i.strip()
-            while len(i) > 0 and i[0] == " ":
-                i = i[1:]
-            if i == "":
-                continue
-            ind = i.index(" ")
-            website = i[:ind]
-            title = i[ind + 1 :].replace("\n", "")
-            while len(title) > 0 and title[0] == " ":
-                title = title[1:]
-            while len(title) > 0 and title[-1] == " ":
-                title = title[:-1]
-            if title == "":
-                continue
-            website_col[website] = title
-    allbegin = now()
-    numberpage = 1e-6
-    for website, title in website_col.items():
-        begin = now()
-        nam = (
-            title.replace(":", "_")
-            .replace("?", "_问号_")
-            .replace("/", "_")
-            .replace("\\", "_")
-            .replace('"', "_")
-            .replace("*", "_")
-            .replace("|", "_")
-            .replace("？", "_问号_")
-            .replace("！", "_感叹号_")
-            .replace("<", "小于")
-            .replace(">", "大于")
-            .replace("(", "")
-            .replace(")", "")
-            .replace(",", "_逗号_")
-            .replace("，", "_逗号_")
-            .replace("   ", "_空格_")
-            .replace("  ", "_空格_")
-            .replace(" ", "_空格_")
-            .replace("：", "_冒号_")
-        )
-        if len(nam) > 100:
-            nam = nam[:100]
-        temp_name = nam
-        while temp_name != "" and temp_name[-1] == " ":
-            temp_name = temp_name[:-1]
-        while temp_name != "" and temp_name[0] == " ":
-            temp_name = temp_name[1:]
-
-        direxit = False
-        fileexit = False
-        dirname = ""
-        filesize = 0
-        kkk = -9
-        for i in os.listdir(answerdir):
-            if nam in i and os.path.isdir(os.path.join(answerdir, i)):
-                direxit = True
-                dircol = os.path.join(answerdir, i)
-                for j in os.listdir(dircol):
-                    if ".pdf" in j:
-                        if os.path.getsize(os.path.join(dircol, j)) > 0:
-                            kkk = 9
-                            break
-                if kkk > 0:
-                    break
-        if kkk > 0:
-            print(f"{os.path.join(dircol, j)}已经爬取过了，不再重复爬取")
-            continue
-
-        dircrea = os.path.join(answerdir, temp_name)
-
-        # if direxit and fileexit and filesize > 0:
-        #     if '_IP_' in dirname:
-        #         filnam = dirname[16+1:].split("_IP_")[0]
-        #     else:
-        #         filnam = dirname[16+1:][:-1]
-        #     if filnam == nam:
-        #         continue
-
-        os.makedirs(dircrea, exist_ok=True)
-
-        # get article text
-        driver.get(website)
-        WebDriverWait(driver, timeout=10).until(
-            lambda d: d.find_element(By.CLASS_NAME, "AnswerItem-editButtonText")
-        )
-
-        # https://stackoverflow.com/questions/61877719/how-to-get-current-scroll-height-in-selenium-python
-        scrollHeight = driver.execute_script(
-            """return document.getElementsByClassName("QuestionAnswer-content")[0].scrollHeight"""
-        )
-        footer = driver.find_element(By.TAG_NAME, "html")
-        scroll_origin = ScrollOrigin.from_element(footer, 0, 0)
-        ActionChains(driver).scroll_from_origin(scroll_origin, 0, -100000).perform()
-        for i in range(18):
-            try:
-                ActionChains(driver).scroll_from_origin(
-                    scroll_origin, 0, scrollHeight // 18
-                ).perform()
-            except:
-                try:
-                    ActionChains(driver).scroll_from_origin(
-                        scroll_origin, 0, -scrollHeight // 18
-                    ).perform()
-                except:
-                    pass
-            crawlsleep(0.8)
-        ActionChains(driver).scroll_from_origin(scroll_origin, 0, -100000).perform()
-        article = ""
-        number = 0
-        try:
-            QuestionRichText = driver.find_element(By.CLASS_NAME, "QuestionRichText")
-            button = QuestionRichText.find_element(
-                By.CLASS_NAME, "QuestionRichText-more"
-            )
-            WebDriverWait(driver, timeout=20).until(
-                EC.element_to_be_clickable((By.CLASS_NAME, "QuestionRichText-more"))
-            )
-            crawlsleep(max(2, sleeptime))
-            button.click()
-            question_RichText = QuestionRichText.find_element(By.CLASS_NAME, "RichText")
-            # question_childNodes = driver.execute_script("return arguments[0].childNodes;", question_RichText)
-
-            article += "# question： <br>\n"
-            # for nod in question_childNodes:
-            #     article, number = recursion(nod, article, number, driver, dircrea)
-
-            inner = driver.execute_script(
-                "return arguments[0].innerHTML;", question_RichText
-            )
-            innerHTML = BeautifulSoup(inner, "html.parser")
-            article, number = parser_beautiful(innerHTML, article, number, dircrea)
-        except:
-            pass
-        article += "<br>\n\n\n# answer： <br>\n"
-        # remove noneed element
-        try:
-            driver.execute_script(
-                """document.getElementsByClassName("MoreAnswers")[0].remove();"""
-            )
-        except:
-            pass
-        try:
-            driver.execute_script(
-                """document.getElementsByClassName("ViewAll")[0].remove();"""
-            )
-        except:
-            pass
-        try:
-            driver.execute_script(
-                """document.getElementsByClassName("ViewAll")[0].remove();"""
-            )
-        except:
-            pass
-        try:
-            driver.execute_script(
-                """document.getElementsByClassName("AppHeader")[0].remove();"""
-            )
-        except:
-            pass
-        try:
-            driver.execute_script(
-                """document.getElementsByClassName("Reward")[0].remove();"""
-            )
-        except:
-            pass
-        try:
-            driver.execute_script(
-                """document.getElementsByClassName("Question-sideColumn")[0].remove();"""
-            )
-        except:
-            pass
-
-        Created = "not found"
-        Modified = "not found"
-        QuestionAnswer = driver.find_element(By.CLASS_NAME, "QuestionAnswer-content")
-        richtext = QuestionAnswer.find_element(
-            By.CLASS_NAME, "CopyrightRichText-richText"
-        )
-        Createdtime = QuestionAnswer.find_element(By.CLASS_NAME, "ContentItem-time")
-        Created = Createdtime.text[4:].replace(":", "_").replace(".", "_")
-
-        if MarkDown_FORMAT:
-            metatext = QuestionAnswer.find_elements(By.TAG_NAME, "meta")
-            for i in range(len(metatext)):
-                # if metatext[i].get_attribute("itemprop")=="dateCreated":
-                #     Created = metatext[i].get_attribute("content").replace(":", "_").replace(".", "_")
-                if metatext[i].get_attribute("itemprop") == "dateModified":
-                    Modified = (
-                        metatext[i]
-                        .get_attribute("content")
-                        .replace(":", "_")
-                        .replace(".", "_")
-                    )
-
-            # answer_childNodes = driver.execute_script("return arguments[0].childNodes;", richtext)
-            # for nod in answer_childNodes:
-            #     article, number = recursion(nod, article, number, driver, dircrea)
-
-            inner = driver.execute_script("return arguments[0].innerHTML;", richtext)
-            innerHTML = BeautifulSoup(inner, "html.parser")
-            article, number = parser_beautiful(innerHTML, article, number, dircrea)
-
-            article = (
-                article.replace("修改\n", "")
-                .replace("开启赞赏\n", "开启赞赏, ")
-                .replace("添加评论\n", "")
-                .replace("分享\n", "")
-                .replace("收藏\n", "")
-                .replace("设置\n", "")
-            )
-            voteup = driver.find_element(By.CLASS_NAME, "VoteButton--up").text
-            Comment = driver.find_element(By.CLASS_NAME, "QuestionHeader-Comment").text
-            article += f"\n\n 赞同数：{voteup}，评论数：{Comment}\n"
-
-            url = driver.current_url
-            article += "<br>\n\n[" + url + "](" + url + ")<br>\n"
-            driver.execute_script(
-                'const para = document.createElement("h2"); \
-                                    const br = document.createElement("br"); \
-                                    const node = document.createTextNode("%s");\
-                                    para.appendChild(node);\
-                                    const currentDiv = document.getElementsByClassName("QuestionHeader-title")[0];\
-                                    currentDiv.appendChild(br); \
-                                    currentDiv.appendChild(para);'
-                % url
-            )
-
-            if len(article) > 0:
-                try:
-                    f = open(
-                        os.path.join(dircrea, nam[:3] + "_.md"), "w", encoding="utf-8"
-                    )
-                    f.close()
-                except:
-                    nam = nam[: len(nam) // 2]
-                with open(
-                    os.path.join(dircrea, nam[:3] + "_.md"), "w", encoding="utf-8"
-                ) as obj:
-                    obj.write("# " + title + "\n\n")
-                    if len(article) > 0:
-                        obj.write(article + "\n\n\n")
-                    obj.write("Created: " + Created + "\n")
-                    obj.write("Modified: " + Modified + "\n")
-
-        # article to pdf
-        pagetopdf(driver, dircrea, temp_name, nam, answerdir, url, Created=Created)
-        crawlsleep(sleeptime)
-        end = now()
-        print("爬取一篇回答耗时：", title, round(end - begin, 3))
-        logfp.write(
-            "爬取一篇回答耗时：" + title + " " + str(round(end - begin, 3)) + "\n"
-        )
-        numberpage += 1
-        # crawlsleep(600)
-    allend = now()
-    print("平均爬取一篇回答耗时：", round((allend - allbegin) / numberpage, 3))
-    logfp.write(
-        "平均爬取一篇回答耗时："
-        + str(round((allend - allbegin) / numberpage, 3))
-        + "\n"
-    )
 
 
 def open_zhihu():
@@ -1177,6 +878,155 @@ def start_crawl():
         logfp.write(nowtime() + ", 回答爬取已经好了的\n")
 
     driver.quit()
+
+
+def sanitize_filename(title, max_length=100):
+    """清理并规范化文件名"""
+    replacements = {
+        ":": "_",
+        "?": "_问号_",
+        "/": "_",
+        "\\": "_",
+        '"': "_",
+        "*": "_",
+        "|": "_",
+        "？": "_问号_",
+        "！": "_感叹号_",
+        "<": "小于",
+        ">": "大于",
+        "(": "",
+        ")": "",
+        ",": "_逗号_",
+        "，": "_逗号_",
+        "   ": "_空格_",
+        "  ": "_空格_",
+        " ": "_空格_",
+        "：": "_冒号_",
+        "、": "_顿号_",
+    }
+
+    name = title
+    for old, new in replacements.items():
+        name = name.replace(old, new)
+
+    if len(name) > max_length:
+        name = name[:max_length]
+
+    name = name.strip()
+    return name
+
+
+def check_existing_content(base_dir, name):
+    """检查内容是否已经存在"""
+    for dir_name in os.listdir(base_dir):
+        if name in dir_name and os.path.isdir(os.path.join(base_dir, dir_name)):
+            dir_path = os.path.join(base_dir, dir_name)
+            for file_name in os.listdir(dir_path):
+                if file_name.endswith(".pdf"):
+                    if os.path.getsize(os.path.join(dir_path, file_name)) > 0:
+                        return True, os.path.join(dir_path, file_name)
+    return False, None
+
+
+def scroll_page(driver, content_class=None):
+    """滚动页面以加载所有内容"""
+    if content_class:
+        scroll_height = driver.execute_script(
+            f"""return document.getElementsByClassName("{content_class}")[0].scrollHeight"""
+        )
+    else:
+        scroll_height = driver.execute_script(
+            """return document.documentElement.scrollHeight"""
+        )
+
+    footer = driver.find_element(By.TAG_NAME, "html")
+    scroll_origin = ScrollOrigin.from_element(
+        footer, 0, -60 if not content_class else 0
+    )
+    ActionChains(driver).scroll_from_origin(scroll_origin, 0, -100000).perform()
+
+    for i in range(18):
+        try:
+            ActionChains(driver).scroll_from_origin(
+                scroll_origin, 0, scroll_height // 18
+            ).perform()
+        except:
+            try:
+                ActionChains(driver).scroll_from_origin(
+                    scroll_origin, 0, -scroll_height // 18
+                ).perform()
+            except:
+                pass
+        crawlsleep(0.8)
+
+
+def save_markdown_content(
+    content, title, file_path, created_time="", modified_time="", extra_info=""
+):
+    """保存Markdown格式的内容"""
+    try:
+        with open(file_path, "w", encoding="utf-8") as f:
+            f.write(f"# {title}\n\n")
+            if content:
+                f.write(f"{content}\n\n\n")
+            if created_time:
+                f.write(f"Created: {created_time}\n")
+            if modified_time:
+                f.write(f"Modified: {modified_time}\n")
+            if extra_info:
+                f.write(f"\n{extra_info}\n")
+    except:
+        # 如果文件名太长，使用截断的文件名
+        dir_path = os.path.dirname(file_path)
+        file_name = os.path.basename(file_path)
+        shortened_name = file_name[: len(file_name) // 2]
+        new_path = os.path.join(dir_path, shortened_name)
+        with open(new_path, "w", encoding="utf-8") as f:
+            f.write(f"# {title}\n\n")
+            if content:
+                f.write(f"{content}\n\n\n")
+            if created_time:
+                f.write(f"Created: {created_time}\n")
+            if modified_time:
+                f.write(f"Modified: {modified_time}\n")
+            if extra_info:
+                f.write(f"\n{extra_info}\n")
+
+
+def remove_unwanted_elements(driver, element_classes):
+    """移除不需要的页面元素"""
+    for class_name in element_classes:
+        try:
+            driver.execute_script(
+                f"""document.getElementsByClassName("{class_name}")[0].remove();"""
+            )
+        except:
+            pass
+
+
+def process_content(driver, content_element, dir_path, is_question=False):
+    """处理内容（文章或回答）"""
+    article = ""
+    number = 0
+
+    if is_question:
+        article += "# question： <br>\n"
+
+    inner = driver.execute_script("return arguments[0].innerHTML;", content_element)
+    innerHTML = BeautifulSoup(inner, "html.parser")
+    article, number = parser_beautiful(innerHTML, article, number, dir_path)
+
+    # 清理文本
+    article = (
+        article.replace("修改\n", "")
+        .replace("开启赞赏\n", "开启赞赏, ")
+        .replace("添加评论\n", "")
+        .replace("分享\n", "")
+        .replace("收藏\n", "")
+        .replace("设置\n", "")
+    )
+
+    return article, number
 
 
 if __name__ == "__main__":
