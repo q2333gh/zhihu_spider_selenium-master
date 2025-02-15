@@ -9,6 +9,11 @@
 3、保存**想法**到text并保存相应的图片，最后对所有text进行汇总到一个档案<br>
 
 ## LOG
+btwl:
+1. 重构代码: ez to understand:重构代码结构,简化主文件.-> ready for changes
+2. 优化爬取速度 20s-> 3s : --save_pdf flag 可以控制是否保存pdf,不保存pdf则是3s.
+3. 增加爬取自己的收藏的功能. 用法: 自行手点点击找到某个收藏夹: https://www.zhihu.com/collection/69xxxx579  , 然后 `python crawler.py --favorite 698xxxx579 --MarkDown`
+
 -----------20241224 add macos intel and macos m1 support
 
 -----------20230729 使用beautifulsoup库来进行解析网页，使用起来更加稳定的而且排版更加贴近网页，之前是使用的selenium

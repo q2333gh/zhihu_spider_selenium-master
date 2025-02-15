@@ -593,6 +593,70 @@ def recursion(nod, article, number, driver, dircrea, bk=False):
     return article, number
 
 
+def scroll_page_for_pdf(driver, content_class=None):
+    """专门为PDF生成滚动页面以加载所有内容"""
+    if content_class:
+        scroll_height = driver.execute_script(
+            f"""return document.getElementsByClassName("{content_class}")[0].scrollHeight"""
+        )
+    else:
+        scroll_height = driver.execute_script(
+            """return document.documentElement.scrollHeight"""
+        )
+
+    footer = driver.find_element(By.TAG_NAME, "html")
+    scroll_origin = ScrollOrigin.from_element(
+        footer, 0, -60 if not content_class else 0
+    )
+    ActionChains(driver).scroll_from_origin(scroll_origin, 0, -100000).perform()
+
+    for i in range(18):
+        try:
+            ActionChains(driver).scroll_from_origin(
+                scroll_origin, 0, scroll_height // 18
+            ).perform()
+        except:
+            try:
+                ActionChains(driver).scroll_from_origin(
+                    scroll_origin, 0, -scroll_height // 18
+                ).perform()
+            except:
+                pass
+        crawlsleep(0.8)
+
+
+def prepare_page_for_pdf(driver, url, content_type):
+    """准备页面用于PDF生成"""
+    # 滚动页面加载所有内容
+    scroll_page_for_pdf(driver)
+
+    # 移除不需要的元素
+    unwanted_elements = (
+        ["Post-Sub", "ColumnPageHeader-Wrapper", "RichContent-actions"]
+        if content_type == "article"
+        else [
+            "Post-Sub",
+            "ColumnPageHeader-Wrapper",
+            "RichContent-actions",
+            "QuestionHeader-footer",
+        ]
+    )
+    remove_unwanted_elements(driver, unwanted_elements)
+
+    # 为文章添加URL信息
+    if content_type == "article":
+        driver.execute_script(
+            'const para = document.createElement("h2"); \
+            const br = document.createElement("br"); \
+            const node = document.createTextNode("%s");\
+            para.appendChild(node);\
+            const currentDiv = document.getElementsByClassName("Post-Header")[0];\
+            currentDiv.appendChild(br); \
+            currentDiv.appendChild(para);'
+            % url
+        )
+
+
 def crawl_detail(driver, content_type="article"):
     """统一处理文章和回答的爬取逻辑"""
     base_dir = articledir if content_type == "article" else answerdir
@@ -654,21 +718,8 @@ def crawl_detail(driver, content_type="article"):
                 lambda d: d.find_element(By.CLASS_NAME, "QuestionHeader-title")
             )
 
-        # 滚动页面加载所有内容
-        scroll_page(driver)
-
-        # 移除不需要的元素
-        unwanted_elements = (
-            ["Post-Sub", "ColumnPageHeader-Wrapper", "RichContent-actions"]
-            if content_type == "article"
-            else [
-                "Post-Sub",
-                "ColumnPageHeader-Wrapper",
-                "RichContent-actions",
-                "QuestionHeader-footer",
-            ]
-        )
-        remove_unwanted_elements(driver, unwanted_elements)
+        Created = ""
+        Modified = ""
 
         if MarkDown_FORMAT:
             # 处理正文内容
@@ -714,28 +765,17 @@ def crawl_detail(driver, content_type="article"):
             )
 
         # 保存PDF
-        url = driver.current_url
-        if content_type == "article":
-            driver.execute_script(
-                'const para = document.createElement("h2"); \
-                const br = document.createElement("br"); \
-                const node = document.createTextNode("%s");\
-                para.appendChild(node);\
-                const currentDiv = document.getElementsByClassName("Post-Header")[0];\
-                currentDiv.appendChild(br); \
-                currentDiv.appendChild(para);'
-                % url
+        if SAVE_PDF:
+            prepare_page_for_pdf(driver, driver.current_url, content_type)
+            pagetopdf(
+                driver,
+                dircrea,
+                temp_name,
+                nam,
+                base_dir,
+                driver.current_url,
+                Created=Created if content_type == "article" else "",
             )
-
-        pagetopdf(
-            driver,
-            dircrea,
-            temp_name,
-            nam,
-            base_dir,
-            url,
-            Created=Created if content_type == "article" else "",
-        )
 
         crawlsleep(sleeptime)
 
@@ -824,7 +864,6 @@ def open_zhihu():
 
 def start_crawl():
     global driverpath
-    # #crawl articles links
     try:
         downloaddriver(abspath)
         driver = open_zhihu()
@@ -836,12 +875,17 @@ def start_crawl():
 
     driver, username = login_loadsavecookie(driver, cookie_path)
 
-    # #crawl think links
+    # 爬取收藏夹
+    if favorite_id:
+        crawl_favorite_detail(driver, favorite_id)
+        logfp.write(nowtime() + f", 收藏夹 {favorite_id} 爬取已经好了的\n")
+
+    # 爬取想法
     if crawl_think:
         crawl_think_links(driver, username)
         logfp.write(nowtime() + ", 想法爬取已经好了的\n")
 
-    # #crawl articles links
+    # 爬取文章
     if crawl_article:
         if not os.path.exists(os.path.join(articledir, "article.txt")):
             crawl_article_links(driver, username)
@@ -859,7 +903,7 @@ def start_crawl():
         crawl_article_detail(driver)
         logfp.write(nowtime() + ", article爬取已经好了的\n")
 
-    # #crawl answers links
+    # 爬取回答
     if crawl_answer:
         if not os.path.exists(os.path.join(answerdir, "answers.txt")):
             crawl_answers_links(driver, username)
@@ -1029,6 +1073,116 @@ def process_content(driver, content_element, dir_path, is_question=False):
     return article, number
 
 
+def extract_favorite_items(driver):
+    """提取收藏夹中的条目"""
+    # 等待内容加载
+    WebDriverWait(driver, timeout=10).until(
+        lambda d: d.find_elements(By.CLASS_NAME, "CollectionDetailPageItem")
+    )
+
+    items = driver.find_elements(By.CLASS_NAME, "CollectionDetailPageItem")
+    page_items = []
+
+    for item in items:
+        try:
+            # 获取链接和标题
+            link_element = item.find_element(By.CSS_SELECTOR, "h2.ContentItem-title a")
+            link = link_element.get_attribute("href")
+            title = link_element.text.strip()
+
+            if link and title:
+                # 判断链接类型
+                if "/answer/" in link:
+                    page_items.append(("answer", link, title))
+                elif "/article/" in link:
+                    page_items.append(("article", link, title))
+        except:
+            continue
+
+    return page_items
+
+
+def crawl_favorite_links(driver: webdriver, collection_id: str):
+    """爬取收藏夹中的链接"""
+    base_url = f"https://www.zhihu.com/collection/{collection_id}"
+    page_url = f"https://www.zhihu.com/collection/{collection_id}?page="
+
+    # 创建收藏夹目录
+    favorite_dir = os.path.join(savepath, f"favorite_{collection_id}")
+    os.makedirs(favorite_dir, exist_ok=True)
+
+    # 创建答案和文章子目录
+    favorite_answer_dir = os.path.join(favorite_dir, "answers")
+    favorite_article_dir = os.path.join(favorite_dir, "articles")
+    os.makedirs(favorite_answer_dir, exist_ok=True)
+    os.makedirs(favorite_article_dir, exist_ok=True)
+
+    # 爬取所有页面的内容
+    driver.get(base_url)
+    maxpages = get_max_pages(driver)
+    print(f"收藏夹共有 {maxpages} 页内容")
+
+    answer_items = []
+    article_items = []
+
+    for p in range(1, maxpages + 1):
+        print(f"正在爬取第 {p} 页...")
+        driver.get(page_url + str(p))
+        items = extract_favorite_items(driver)
+        for item_type, link, title in items:
+            if item_type == "answer":
+                answer_items.append((link, title))
+            else:
+                article_items.append((link, title))
+        crawlsleep(sleeptime)
+
+    # 保存链接到对应文件
+    if answer_items:
+        print(f"共找到 {len(answer_items)} 个回答")
+        save_links_to_file(
+            answer_items, os.path.join(favorite_answer_dir, "answers.txt")
+        )
+    if article_items:
+        print(f"共找到 {len(article_items)} 篇文章")
+        save_links_to_file(
+            article_items, os.path.join(favorite_article_dir, "articles.txt")
+        )
+
+    return favorite_answer_dir, favorite_article_dir
+
+
+def crawl_favorite_detail(driver: webdriver, collection_id: str):
+    """爬取收藏夹中的详细内容"""
+    global answerdir, articledir
+
+    # 爬取链接
+    favorite_answer_dir, favorite_article_dir = crawl_favorite_links(
+        driver, collection_id
+    )
+
+    # 临时保存原来的目录设置
+    original_answer_dir = answerdir
+    original_article_dir = articledir
+
+    try:
+        # 修改全局目录到收藏夹对应目录
+        answerdir = favorite_answer_dir
+        articledir = favorite_article_dir
+
+        # 爬取答案内容
+        if os.path.exists(os.path.join(favorite_answer_dir, "answers.txt")):
+            crawl_answer_detail(driver)
+
+        # 爬取文章内容
+        if os.path.exists(os.path.join(favorite_article_dir, "articles.txt")):
+            crawl_article_detail(driver)
+
+    finally:
+        # 恢复原来的目录设置
+        answerdir = original_answer_dir
+        articledir = original_article_dir
+
+
 if __name__ == "__main__":
     from viztracer import VizTracer
 
@@ -1101,6 +1255,16 @@ if __name__ == "__main__":
         action="store_true",
         help=r"crawl links scratch for answer or article, 是否使用已经保存好的website和title, 否则再次爬取website",
     )
+    parser.add_argument(
+        "--save_pdf",
+        action="store_true",
+        help=r"save PDF format, 是否保存PDF格式, 默认不保存",
+    )
+    parser.add_argument(
+        "--favorite",
+        type=str,
+        help=r"crawl favorite collection by collection id, 爬取指定收藏夹的内容, 例如: 698890579",
+    )
     args = parser.parse_args()
     sleeptime = args.sleep_time
     crawl_think = args.think
@@ -1109,6 +1273,8 @@ if __name__ == "__main__":
     crawl_links_scratch = args.links_scratch
     addtime = args.computer_time_sleep
     MarkDown_FORMAT = args.MarkDown
+    SAVE_PDF = args.save_pdf
+    favorite_id = args.favorite
 
     try:
         start_crawl()
