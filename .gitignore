@@ -163,3 +163,5 @@ cython_debug/
 output/
 zhihu_crawler_trace.json
 log/
+cookie/
+msedgedriver/
