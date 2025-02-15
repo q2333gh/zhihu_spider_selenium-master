@@ -1,3 +1,5 @@
+手动fork自: https://github.com/ZouJiu1/zhihu_spider_selenium.git
+
 # 爬取知乎的内容
 考虑到将写的内容爬取下来，保存起来的避免误删，算是个备份的，而且方便查找，阅读起来也更方便，使用起来也好很多 <br>
  
