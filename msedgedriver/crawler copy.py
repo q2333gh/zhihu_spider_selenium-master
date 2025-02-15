@@ -37,7 +37,7 @@ import sys
 sys.path.append(abspath)
 # wkhtmltopdf_path = os.path.join(abspath, r'wkhtmltopdf\bin\wkhtmltopdf.exe')
 # sys.path.append(wkhtmltopdf_path)
-from thinkdeal import *
+from my_lib.thinkdeal import *
 
 
 def save_cookie(driverkkk, path):

@@ -41,84 +41,12 @@ abspath = abspath.replace(filename, "")
 import sys
 
 sys.path.append(abspath)
-from thinkdeal import *
+sys.path.append(os.path.join(abspath, "../../my_lib"))
 
-
-def save_cookie(driverkkk, path):
-    with open(path, "wb") as filehandler:
-        pickle.dump(driverkkk.get_cookies(), filehandler)
-
-
-def load_cookie(driverkkk, path):
-    with open(path, "rb") as cookiesfile:
-        cookies = pickle.load(cookiesfile)
-        for cookie in cookies:
-            driverkkk.add_cookie(cookie)
-
-
-def crawlsleep(times):
-    time.sleep(times)
-
-
-def now():
-    return time.time()
-
-
-def nowtime():
-    nowtm = datetime.fromtimestamp(time.time()).isoformat().replace(":", "_")
-    return nowtm
-
-
-def edgeopen(driverpath):
-    service = Service(executable_path=driverpath)
-    edge_options = EdgeOptions()
-
-    edge_options.add_experimental_option("excludeSwitches", ["enable-automation"])
-    edge_options.add_experimental_option("useAutomationExtension", False)
-    edge_options.add_argument("lang=zh-CN,zh,zh-TW,en-US,en")
-    edge_options.add_argument(
-        "disable-blink-features=AutomationControlled"
-    )  # 就是这一行告诉chrome去掉了webdriver痕迹
-
-    edge_options.page_load_strategy = "normal"
-
-    driver = webdriver.Edge(options=edge_options, service=service)
-    driver.execute_script(
-        "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
-    )
-    driver.execute_cdp_cmd(
-        "Network.setUserAgentOverride",
-        {
-            "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/83.0.4103.53 Safari/537.36"
-        },
-    )
-    driver.set_script_timeout(20)
-
-    return driver
-
-
-def login(driver):
-    driver.get(r"https://www.zhihu.com/")
-    try:
-        driver.find_elements(By.CLASS_NAME, "SignFlow-tab")[1].click()
-    except:
-        pass
-    toggle = []
-    ti = 1
-    while toggle == [] and ti < 600:
-        toggle = driver.find_elements(By.ID, "Popover15-toggle")
-        time.sleep(3)
-        if ti % 10 == 0:
-            print(
-                "等待输入账号并点击登录，登录以后请不要执行任何操作，10分钟后自动退出........."
-            )
-        ti += 3
-    toggle = driver.find_elements(By.ID, "Popover15-toggle")
-    if toggle == []:
-        print("还没有登陆的，还请登录保存cookie.......")
-        driver.quit()
-        exit(0)
-    return driver
+from my_lib.thinkdeal import *
+from my_lib.driver_utils import downloaddriver, edgeopen
+from my_lib.login_utils import login_loadsavecookie
+from my_lib.time_utils import now, nowtime, crawlsleep
 
 
 def get_max_pages(driver):
@@ -584,11 +512,6 @@ def recursion(nod, article, number, driver, dircrea, bk=False):
                         article, number = recursion(
                             pnode, article, number, driver, dircrea, bk
                         )
-            # else:
-            #     formula_span = nod.find_elements(By.CLASS_NAME, "ztext-math")
-            #     for jf in range(len(formula_span)):
-            #         ele = formula_span[jf]
-            #         article += "$" + ele.get_attribute("data-tex") + "$"
         elif tag_name == "a":
             linksite = nod.get_attribute("href")
             if linksite:
@@ -619,8 +542,6 @@ def recursion(nod, article, number, driver, dircrea, bk=False):
             article += nod.text
             if bk:
                 article += "**"
-        # elif tag_name=='td':
-        #     article += nod.text
         elif tag_name in ["table", "tbody", "tr", "td", "u"]:
             p_childNodes = driver.execute_script("return arguments[0].childNodes;", nod)
             for pnode in p_childNodes:
@@ -638,7 +559,6 @@ def recursion(nod, article, number, driver, dircrea, bk=False):
                 article += nod.text
             article += "\n"
         elif tag_name == "div":
-            # atags = nod.find_elements(By.TAG_NAME, 'a')
             prenode = nod.find_elements(By.TAG_NAME, "code")
             if len(prenode) > 0:
                 for i in prenode:
@@ -666,7 +586,6 @@ def recursion(nod, article, number, driver, dircrea, bk=False):
                         continue
                 if response.status_code == 200:
                     article += """ <img src="%d.jpg" width="100%%"/> """ % number
-                    # article += '''<img src="%d.jpg"/>'''%number
                     with open(os.path.join(dircrea, str(number) + ".jpg"), "wb") as obj:
                         obj.write(response.content)
                     number += 1
@@ -734,9 +653,6 @@ def crawl_article_detail(driver: webdriver):
             temp_name = temp_name[:-1]
         while temp_name != "" and temp_name[0] == " ":
             temp_name = temp_name[1:]
-        # nam_pinyin = pinyin.get(nam, format='numerical')
-        # if '租房' not in title:
-        #     continue
         direxit = False
         fileexit = False
         dirname = ""
@@ -785,7 +701,6 @@ def crawl_article_detail(driver: webdriver):
                 except:
                     pass
             crawlsleep(0.8)
-        # remove noneed element
         try:
             driver.execute_script(
                 """document.getElementsByClassName("Post-Sub")[0].remove();"""
@@ -808,12 +723,8 @@ def crawl_article_detail(driver: webdriver):
         if MarkDown_FORMAT:
             richtext = driver.find_element(By.CLASS_NAME, "Post-RichText")
             titletext = driver.find_element(By.CLASS_NAME, "Post-Title")
-            # article_childNodes = driver.execute_script("return arguments[0].childNodes;", richtext)
             article = ""
             number = 0
-
-            # for nod in article_childNodes:
-            # article, number = recursion(nod, article, number, driver, dircrea)
 
             inner = driver.execute_script("return arguments[0].innerHTML;", richtext)
             innerHTML = BeautifulSoup(inner, "html.parser")
@@ -847,7 +758,6 @@ def crawl_article_detail(driver: webdriver):
                         obj.write(article + "\n\n\n")
                     obj.write("\n\n\n")
 
-        # article to pdf
         clocktxt = driver.find_element(By.CLASS_NAME, "Post-NormalMain").find_element(
             By.CLASS_NAME, "ContentItem-time"
         )
@@ -868,19 +778,12 @@ def crawl_article_detail(driver: webdriver):
 
         crawlsleep(sleeptime)
 
-        # https://stackoverflow.com/questions/23359083/how-to-convert-webpage-into-pdf-by-using-python
-        # https://github.com/JazzCore/python-pdfkit
-        # if article_to_jpg_pdf_markdown:
-        #     config = pdfkit.configuration(wkhtmltopdf = wkhtmltopdf_path)
-        #     pdfkit.from_url(website, os.path.join(dircrea, nam_pinyin+"_.pdf"), configuration = config)
-
         end = now()
         print("爬取一篇article耗时：", title, round(end - begin, 3))
         logfp.write(
             "爬取一篇article耗时：" + title + " " + str(round(end - begin, 3)) + "\n"
         )
         numberpage += 1
-        # crawlsleep(600)
     allend = now()
     print("平均爬取一篇article耗时：", round((allend - allbegin) / numberpage, 3))
     logfp.write(
@@ -900,12 +803,6 @@ def pagetopdf(driver, dircrea, temp_name, nam, destdir, url, Created=""):
 
     printop = PrintOptions()
     printop.shrink_to_fit = True
-    # printop.margin_left = 0
-    # printop.margin_right = 0
-    # printop.margin_top = 0
-    # printop.margin_bottom = 0
-    # printop.page_height = 29.7
-    # printop.page_width = 21
     printop.background = True
     printop.scale = 1.0
 
@@ -919,8 +816,7 @@ def pagetopdf(driver, dircrea, temp_name, nam, destdir, url, Created=""):
                 'the page is too large, can not save, you should save pdf using "Ctrl+P or Ctrl+Shift+P"\n'
             )
 
-    # driver.execute_script('window.print();')
-    clock = Created  # clocktxt.text[3+1:].replace(":", "_")
+    clock = Created
     with open(os.path.join(dircrea, clock + ".txt"), "w", encoding="utf-8") as obj:
         obj.write(clock + "\n")
         obj.write(url)
@@ -994,28 +890,16 @@ def crawl_answer_detail(driver: webdriver):
         )
         if len(nam) > 100:
             nam = nam[:100]
-        temp_name = (
-            nam  # str(np.random.randint(999999999)) + str(np.random.randint(999999999))
-        )
+        temp_name = nam
         while temp_name != "" and temp_name[-1] == " ":
             temp_name = temp_name[:-1]
         while temp_name != "" and temp_name[0] == " ":
             temp_name = temp_name[1:]
-        # nam_pinyin = pinyin.get(nam, format='numerical')
-        # if '不定积分该用什么方' not in title:
-        #     continue
+
         direxit = False
         fileexit = False
         dirname = ""
         filesize = 0
-        # for i in os.listdir(answerdir):
-        #     if nam in i and os.path.isdir(os.path.join(answerdir, i)):
-        #         direxit = True
-        #         dirname = i
-        #         fileexit = os.path.exists(os.path.join(answerdir, dirname, nam + "_.pdf"))
-        #         if fileexit:
-        #             filesize = os.path.getsize(os.path.join(answerdir, dirname, nam + "_.pdf"))
-        #         break
         kkk = -9
         for i in os.listdir(answerdir):
             if nam in i and os.path.isdir(os.path.join(answerdir, i)):
@@ -1227,109 +1111,7 @@ def crawl_answer_detail(driver: webdriver):
     )
 
 
-def login_loadsavecookie(driver):
-    try:
-        load_cookie(driver, cookie_path)
-        driver.get(r"https://www.zhihu.com/")
-        WebDriverWait(driver, timeout=10).until(
-            lambda d: d.find_element(By.ID, "Popover15-toggle")
-        )
-        toggle = driver.find_element(By.ID, "Popover15-toggle")
-    except Exception as e:
-        if os.path.exists(cookie_path):
-            os.remove(cookie_path)
-            print("浏览器cookie失效了，删除了之前的cookie，需要再次登录并保存cookie。")
-        else:
-            print("需要登陆并保存cookie，下次就不用登录了。")
-        driver = login(driver)
-        save_cookie(driver, cookie_path)
-        print(f"cookie保存好了的放在了：{cookie_path}")
-        crawlsleep(3)
-        # driver.quit()
-        # exit(0)
-    try:
-        driver.find_element(By.ID, "Popover15-toggle").click()
-        driver.find_element(By.CLASS_NAME, "Menu-item").click()
-    except:
-        crawlsleep(6)
-        driver.get(r"https://www.zhihu.com/")
-        crawlsleep(3)
-        driver.find_element(By.ID, "Popover15-toggle").click()
-        driver.find_element(By.CLASS_NAME, "Menu-item").click()
-    url = driver.current_url
-    username = url.split("/")[-1]
-    return driver, username
-
-
-def downloaddriver():
-    global driverpath
-    url = "https://msedgedriver.azureedge.net/116.0.1938.62/edgedriver_win64.zip"
-    if not os.path.exists(driverpath):
-        ret = requests.get(
-            "https://developer.microsoft.com/en-us/microsoft-edge/tools/webdriver/"
-        )
-        if ret.status_code != 200:
-            assert ret.status_code != 200
-        ret = BeautifulSoup(ret.content, "html.parser")
-        # divall = ret.find_all('div', class_=r'common-card--lightblue')
-        ddl = ret.find_all("a")
-        name = "msedgedriver.exe"
-        for k in ddl:
-            key = k.attrs.keys()
-            if "href" not in key:
-                continue
-            href = k.attrs["href"]
-            if "darwin" not in sys.platform:
-                if "href" in key and "win64" in href and ".zip" in href:
-                    url = href
-                    break
-            elif "darwin" in sys.platform and "arm" not in platform.processor():
-                if (
-                    "href" in key
-                    and "mac64" in href
-                    and "m1" not in href
-                    and ".zip" in href
-                ):
-                    url = href
-                    name = "msedgedriver"
-                    break
-            elif "darwin" in sys.platform and "arm" in platform.processor():
-                if "href" in key and "mac64_m1" in href and ".zip" in href:
-                    url = href
-                    name = "msedgedriver"
-                    break
-        response = requests.get(url)
-        if response.status_code == 200:
-            with open(
-                os.path.join(abspath, "msedgedriver/edgedriver.zip"), "wb"
-            ) as obj:
-                obj.write(response.content)
-            with ZipFile(
-                os.path.join(abspath, "msedgedriver/edgedriver.zip"), "r"
-            ) as obj:
-                obj.extractall(os.path.join(abspath, "msedgedriver"))
-            nth = os.path.join(abspath, "msedgedriver")
-            for r, d, f in os.walk(nth):
-                kk = 6
-                for i in f:
-                    if "driver" in i and ".zip" not in i:
-                        try:
-                            shutil.move(os.path.join(r, i), os.path.join(nth, i))
-                        except:
-                            pass
-                        os.rename(os.path.join(nth, i), os.path.join(nth, name))
-                        if "darwin" in sys.platform:
-                            print(
-                                f"\n\n请执行权限操作再继续执行：\nchmod +x {os.path.join(nth, name)}\n"
-                            )
-                            exit(0)
-                        kk = -6
-                        break
-                if kk < 0:
-                    break
-
-
-def openEdge():
+def open_zhihu():
     global driverpath
     website = r"https://www.zhihu.com/signin"
 
@@ -1339,19 +1121,19 @@ def openEdge():
     return driver
 
 
-def zhihu():
+def start_crawl():
     global driverpath
     # #crawl articles links
     try:
-        downloaddriver()
-        driver = openEdge()
+        downloaddriver(abspath)
+        driver = open_zhihu()
     except Exception as e:
         if os.path.exists(driverpath):
             os.remove(driverpath)
-        downloaddriver()
-        driver = openEdge()
+        downloaddriver(abspath)
+        driver = open_zhihu()
 
-    driver, username = login_loadsavecookie(driver)
+    driver, username = login_loadsavecookie(driver, cookie_path)
 
     # #crawl think links
     if crawl_think:
@@ -1407,12 +1189,20 @@ if __name__ == "__main__":
         driverpath = os.path.join(abspath, "msedgedriver" + os.sep + "msedgedriver.exe")
     else:
         driverpath = os.path.join(abspath, "msedgedriver" + os.sep + "msedgedriver")
-    savepath = deepcopy(abspath)
+
+    # 创建output根目录
+    output_dir = os.path.join(os.getcwd(), "output")
+    os.makedirs(output_dir, exist_ok=True)
+
+    # 修改所有输出路径到output目录下
+    savepath = output_dir
     cookiedir = os.path.join(savepath, "cookie")
     thinkdir = os.path.join(savepath, "think")
     answerdir = os.path.join(savepath, "answer")
     articledir = os.path.join(savepath, "article")
     logdir = os.path.join(savepath, "log")
+
+    # 其他路径保持不变
     logfile = os.path.join(logdir, nowtime() + "_log.txt")
     os.makedirs(cookiedir, exist_ok=True)
     os.makedirs(thinkdir, exist_ok=True)
@@ -1471,7 +1261,7 @@ if __name__ == "__main__":
     MarkDown_FORMAT = args.MarkDown
 
     try:
-        zhihu()
+        start_crawl()
     finally:
         logfp.close()
         tracer.stop()
