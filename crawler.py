@@ -41,19 +41,15 @@ abspath = abspath.replace(filename, "")
 import sys
 
 sys.path.append(abspath)
-# wkhtmltopdf_path = os.path.join(abspath, r'wkhtmltopdf\bin\wkhtmltopdf.exe')
-# sys.path.append(wkhtmltopdf_path)
 from thinkdeal import *
 
 
 def save_cookie(driverkkk, path):
-    # https://stackoverflow.com/questions/45417335/python-use-cookie-to-login-with-selenium
     with open(path, "wb") as filehandler:
         pickle.dump(driverkkk.get_cookies(), filehandler)
 
 
 def load_cookie(driverkkk, path):
-    # https://stackoverflow.com/questions/45417335/python-use-cookie-to-login-with-selenium
     with open(path, "rb") as cookiesfile:
         cookies = pickle.load(cookiesfile)
         for cookie in cookies:
