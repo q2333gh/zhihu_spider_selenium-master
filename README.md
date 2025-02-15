@@ -13,7 +13,7 @@
 ## LOG
 btwl:
 impl by cursor  composer with cloude:
-1. 重构代码: ez to understand:重构代码结构,简化主文件.-> ready for changes
+1. 重构代码: ez to understand:重构代码结构,简化主文件;优化输出位置-> ready for changes
 2. 优化爬取速度 20s-> 3s : --save_pdf flag 可以控制是否保存pdf,不保存pdf则是3s.
 3. 增加爬取自己的收藏的功能. 用法: 自行手点点击找到某个收藏夹: https://www.zhihu.com/collection/69xxxx579  , 然后 `python crawler.py --favorite 698xxxx579 --MarkDown`
 
