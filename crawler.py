@@ -1398,6 +1398,15 @@ def zhihu():
 
 
 if __name__ == "__main__":
+    from viztracer import VizTracer
+
+    tracer = VizTracer(
+        output_file="zhihu_crawler_trace.json",
+        max_stack_depth=20,
+        enable_return_value=True,
+    )
+    tracer.start()
+
     if sys.platform == "win32":
         driverpath = os.path.join(abspath, "msedgedriver" + os.sep + "msedgedriver.exe")
     else:
@@ -1465,5 +1474,9 @@ if __name__ == "__main__":
     addtime = args.computer_time_sleep
     MarkDown_FORMAT = args.MarkDown
 
-    zhihu()
-    logfp.close()
+    try:
+        zhihu()
+    finally:
+        logfp.close()
+        tracer.stop()
+        tracer.save()  # 保存性能分析结果
