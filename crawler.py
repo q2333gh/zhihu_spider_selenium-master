@@ -1400,11 +1400,7 @@ def zhihu():
 if __name__ == "__main__":
     from viztracer import VizTracer
 
-    tracer = VizTracer(
-        output_file="zhihu_crawler_trace.json",
-        max_stack_depth=20,
-        enable_return_value=True,
-    )
+    tracer = VizTracer(output_file="./log/zhihu_crawler_trace.json", max_stack_depth=20)
     tracer.start()
 
     if sys.platform == "win32":
@@ -1432,7 +1428,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--sleep_time",
         type=float,
-        default=6,
+        default=1,
         help=r"crawler sleep time during crawling, 爬取时的睡眠时间, 避免给知乎服务器带来太大压力, \
                         可以日间调试好，然后深夜运行爬取人少, 给其他小伙伴更好的用户体验, 避免知乎顺着网线过来找人, 默认: 6s",
     )
@@ -1480,3 +1476,7 @@ if __name__ == "__main__":
         logfp.close()
         tracer.stop()
         tracer.save()  # 保存性能分析结果
+
+        # python crawler.py --answer --MarkDown --links_scratch
+        # performance analysis:
+        # python -m viztracer.viewer ./log/zhihu_crawler_trace.json
